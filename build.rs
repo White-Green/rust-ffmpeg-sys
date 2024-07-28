@@ -276,6 +276,8 @@ fn build() -> io::Result<()> {
         switch(&mut configure, &lib.name.to_uppercase(), lib.name);
     }
 
+    enable!(configure, "BUILD_ZLIB", "zlib");
+
     // configure external SSL libraries
     enable!(configure, "BUILD_LIB_GNUTLS", "gnutls");
     enable!(configure, "BUILD_LIB_OPENSSL", "openssl");
