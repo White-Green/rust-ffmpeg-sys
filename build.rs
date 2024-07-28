@@ -241,9 +241,15 @@ fn build() -> io::Result<()> {
     configure.arg("--disable-programs");
 
     macro_rules! enable {
-        ($conf:expr, $feat:expr, $name:expr) => {
+        ($conf:expr, $feat:expr, $name:expr$(, $lib_name:expr)?) => {
             if env::var(concat!("CARGO_FEATURE_", $feat)).is_ok() {
                 $conf.arg(concat!("--enable-", $name));
+                $(
+                    pkg_config::Config::new()
+                        .statik(true)
+                        .probe($lib_name)
+                        .unwrap();
+                )?
             }
         };
     }
@@ -276,7 +282,8 @@ fn build() -> io::Result<()> {
         switch(&mut configure, &lib.name.to_uppercase(), lib.name);
     }
 
-    enable!(configure, "BUILD_ZLIB", "zlib");
+    // enable!の第4引数を限られたものに対してしか指定していないのは単にサボっているだけなので、必要なものは順次足しましょう
+    enable!(configure, "BUILD_ZLIB", "zlib", "zlib");
 
     // configure external SSL libraries
     enable!(configure, "BUILD_LIB_GNUTLS", "gnutls");
@@ -305,7 +312,7 @@ fn build() -> io::Result<()> {
     enable!(configure, "BUILD_LIB_MP3LAME", "libmp3lame");
     enable!(configure, "BUILD_LIB_OPENCORE_AMRNB", "libopencore-amrnb");
     enable!(configure, "BUILD_LIB_OPENCORE_AMRWB", "libopencore-amrwb");
-    enable!(configure, "BUILD_LIB_OPENH264", "libopenh264");
+    enable!(configure, "BUILD_LIB_OPENH264", "libopenh264", "openh264");
     enable!(configure, "BUILD_LIB_OPENH265", "libopenh265");
     enable!(configure, "BUILD_LIB_OPENJPEG", "libopenjpeg");
     enable!(configure, "BUILD_LIB_OPUS", "libopus");
@@ -327,7 +334,7 @@ fn build() -> io::Result<()> {
     enable!(configure, "BUILD_LIB_VPX", "libvpx");
     enable!(configure, "BUILD_LIB_WAVPACK", "libwavpack");
     enable!(configure, "BUILD_LIB_WEBP", "libwebp");
-    enable!(configure, "BUILD_LIB_X264", "libx264");
+    enable!(configure, "BUILD_LIB_X264", "libx264", "x264");
     enable!(configure, "BUILD_LIB_X265", "libx265");
     enable!(configure, "BUILD_LIB_AVS", "libavs");
     enable!(configure, "BUILD_LIB_XVID", "libxvid");
@@ -637,9 +644,6 @@ fn link_to_libraries(statik: bool) {
         if !lib.is_feature || feat_is_enabled {
             println!("cargo:rustc-link-lib={}={}", ffmpeg_ty, lib.name);
         }
-    }
-    if env::var("CARGO_FEATURE_BUILD_ZLIB").is_ok() && cfg!(target_os = "linux") {
-        println!("cargo:rustc-link-lib=z");
     }
 }
 
