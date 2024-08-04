@@ -80,10 +80,10 @@ impl ParseCallbacks for Callbacks {
         let codec_flag_prefix = "AV_CODEC_FLAG_";
         let error_max_size = "AV_ERROR_MAX_STRING_SIZE";
 
-        if value >= i64::min_value() && _name.starts_with(ch_layout_prefix) {
+        if _name.starts_with(ch_layout_prefix) {
             Some(IntKind::ULongLong)
-        } else if value >= i32::min_value() as i64
-            && value <= i32::max_value() as i64
+        } else if value >= i32::MIN as i64
+            && value <= i32::MAX as i64
             && (_name.starts_with(codec_cap_prefix) || _name.starts_with(codec_flag_prefix))
         {
             Some(IntKind::UInt)
@@ -92,7 +92,7 @@ impl ParseCallbacks for Callbacks {
                 name: "usize",
                 is_signed: false,
             })
-        } else if value >= i32::min_value() as i64 && value <= i32::max_value() as i64 {
+        } else if value >= i32::MIN as i64 && value <= i32::MAX as i64 {
             Some(IntKind::Int)
         } else {
             None
@@ -151,7 +151,7 @@ fn source() -> PathBuf {
 
 fn search() -> PathBuf {
     let mut absolute = env::current_dir().unwrap();
-    absolute.push(&output());
+    absolute.push(output());
     absolute.push("dist");
 
     absolute
@@ -370,7 +370,7 @@ fn build() -> io::Result<()> {
     if !Command::new("make")
         .arg("-j")
         .arg(num_cpus::get().to_string())
-        .current_dir(&source())
+        .current_dir(source())
         .status()?
         .success()
     {
@@ -379,7 +379,7 @@ fn build() -> io::Result<()> {
 
     // run make install
     if !Command::new("make")
-        .current_dir(&source())
+        .current_dir(source())
         .arg("install")
         .status()?
         .success()
@@ -451,7 +451,7 @@ fn check_features(
         );
     }
 
-    let version_check_info = [("avcodec", 56, 61, 0, 108)];
+    let version_check_info = [("avcodec", 56, 62, 0, 108)];
     for &(lib, begin_version_major, end_version_major, begin_version_minor, end_version_minor) in
         version_check_info.iter()
     {
@@ -534,6 +534,10 @@ fn check_features(
                 continue;
             }
         }
+        // Here so the features are listed for rust-ffmpeg at build time. Does
+        // NOT represent activated features, just features that exist (hence the
+        // lack of "=true" at the end)
+        println!(r#"cargo:{}="#, var);
 
         let var_str = format!("[{var}]", var = var);
         let pos = var_str.len()
@@ -598,6 +602,7 @@ fn check_features(
         ("ffmpeg_5_1", 59, 37),
         ("ffmpeg_6_0", 60, 3),
         ("ffmpeg_6_1", 60, 31),
+        ("ffmpeg_7_0", 61, 3),
     ];
     for &(ffmpeg_version_flag, lavc_version_major, lavc_version_minor) in
         ffmpeg_lavc_versions.iter()
@@ -614,6 +619,8 @@ fn check_features(
         if &stdout[pos..pos + 1] == "1" {
             println!(r#"cargo:rustc-cfg=feature="{}""#, ffmpeg_version_flag);
             println!(r#"cargo:{}=true"#, ffmpeg_version_flag);
+        } else {
+            println!(r#"cargo:{}="#, ffmpeg_version_flag);
         }
     }
 }
@@ -689,10 +696,33 @@ fn main() {
     // Use prebuilt library
     else if let Ok(ffmpeg_dir) = env::var("FFMPEG_DIR") {
         let ffmpeg_dir = PathBuf::from(ffmpeg_dir);
-        println!(
-            "cargo:rustc-link-search=native={}",
-            ffmpeg_dir.join("lib").to_string_lossy()
-        );
+        if ffmpeg_dir.join("lib/amd64").exists()
+            && env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("x86_64")
+        {
+            println!(
+                "cargo:rustc-link-search=native={}",
+                ffmpeg_dir.join("lib/amd64").to_string_lossy()
+            );
+        } else if ffmpeg_dir.join("lib/armhf").exists()
+            && env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("arm")
+        {
+            println!(
+                "cargo:rustc-link-search=native={}",
+                ffmpeg_dir.join("lib/armhf").to_string_lossy()
+            );
+        } else if ffmpeg_dir.join("lib/arm64").exists()
+            && env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("aarch64")
+        {
+            println!(
+                "cargo:rustc-link-search=native={}",
+                ffmpeg_dir.join("lib/arm64").to_string_lossy()
+            );
+        } else {
+            println!(
+                "cargo:rustc-link-search=native={}",
+                ffmpeg_dir.join("lib").to_string_lossy()
+            );
+        }
         link_to_libraries(statik);
         vec![ffmpeg_dir.join("include")]
     } else if let Some(paths) = try_vcpkg(statik) {
