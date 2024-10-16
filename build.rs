@@ -187,6 +187,14 @@ fn switch(configure: &mut Command, feature: &str, name: &str) {
     configure.arg(arg.to_string() + name);
 }
 
+fn get_ffmpet_target_os() -> String {
+    let cargo_target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+    match cargo_target_os.as_str() {
+        "ios" => "darwin".to_string(),
+        _ => cargo_target_os,
+    }
+}
+
 fn build() -> io::Result<()> {
     let source_dir = source();
 
@@ -198,25 +206,34 @@ fn build() -> io::Result<()> {
 
     configure.arg(format!("--prefix={}", search().to_string_lossy()));
 
-    if env::var("TARGET").unwrap() != env::var("HOST").unwrap() {
+    let target = env::var("TARGET").unwrap();
+    let host = env::var("HOST").unwrap();
+    if target != host {
+        configure.arg("--enable-cross-compile");
+
         // Rust targets are subtly different than naming scheme for compiler prefixes.
         // The cc crate has the messy logic of guessing a working prefix,
         // and this is a messy way of reusing that logic.
         let cc = cc::Build::new();
+
+        // Apple-clang needs this, -arch is not enough.
+        let target_flag = format!("--target={}", target);
+        if cc.is_flag_supported(&target_flag).unwrap_or(false) {
+            configure.arg(format!("--extra-cflags={}", target_flag));
+            configure.arg(format!("--extra-ldflags={}", target_flag));
+        }
+
         let compiler = cc.get_compiler();
         let compiler = compiler.path().file_stem().unwrap().to_str().unwrap();
-        let suffix_pos = compiler.rfind('-').unwrap(); // cut off "-gcc"
-        let prefix = compiler[0..suffix_pos].trim_end_matches("-wr"); // "wr-c++" compiler
-
-        configure.arg(format!("--cross-prefix={}-", prefix));
+        if let Some(suffix_pos) = compiler.rfind('-') {
+            let prefix = compiler[0..suffix_pos].trim_end_matches("-wr"); // "wr-c++" compiler
+            configure.arg(format!("--cross-prefix={}-", prefix));
+        }
         configure.arg(format!(
             "--arch={}",
             env::var("CARGO_CFG_TARGET_ARCH").unwrap()
         ));
-        configure.arg(format!(
-            "--target_os={}",
-            env::var("CARGO_CFG_TARGET_OS").unwrap()
-        ));
+        configure.arg(format!("--target_os={}", get_ffmpet_target_os()));
     }
 
     // control debug build
@@ -231,6 +248,7 @@ fn build() -> io::Result<()> {
     // make it static
     configure.arg("--enable-static");
     configure.arg("--disable-shared");
+    configure.arg("--enable-pthreads");
 
     configure.arg("--enable-pic");
 
@@ -603,6 +621,7 @@ fn check_features(
         ("ffmpeg_6_0", 60, 3),
         ("ffmpeg_6_1", 60, 31),
         ("ffmpeg_7_0", 61, 3),
+        ("ffmpeg_7_1", 61, 19),
     ];
     for &(ffmpeg_version_flag, lavc_version_major, lavc_version_minor) in
         ffmpeg_lavc_versions.iter()
@@ -675,20 +694,50 @@ fn main() {
             let config_mak = source().join("ffbuild/config.mak");
             let file = File::open(config_mak).unwrap();
             let reader = BufReader::new(file);
-            let extra_libs = reader
+            let extra_linker_args = reader
                 .lines()
-                .find(|line| line.as_ref().unwrap().starts_with("EXTRALIBS"))
-                .map(|line| line.unwrap())
-                .unwrap();
+                .filter_map(|line| {
+                    let line = line.as_ref().ok()?;
 
-            let linker_args = extra_libs.split('=').last().unwrap().split(' ');
-            let include_libs = linker_args
-                .filter(|v| v.starts_with("-l"))
-                .map(|flag| &flag[2..]);
+                    if line.starts_with("EXTRALIBS") {
+                        Some(
+                            line.split('=')
+                                .last()
+                                .unwrap()
+                                .split(' ')
+                                .map(|s| s.to_string())
+                                .collect::<Vec<_>>(),
+                        )
+                    } else {
+                        None
+                    }
+                })
+                .flatten()
+                .collect::<Vec<_>>();
 
-            for lib in include_libs {
-                println!("cargo:rustc-link-lib={}", lib);
-            }
+            extra_linker_args
+                .iter()
+                .filter(|flag| flag.starts_with("-l"))
+                .map(|lib| &lib[2..])
+                .for_each(|lib| println!("cargo:rustc-link-lib={}", lib));
+
+            extra_linker_args
+                .iter()
+                .filter(|v| v.starts_with("-L"))
+                .map(|flag| {
+                    let path = &flag[2..];
+                    if path.starts_with('/') {
+                        PathBuf::from(path)
+                    } else {
+                        source().join(path)
+                    }
+                })
+                .for_each(|lib_search_path| {
+                    println!(
+                        "cargo:rustc-link-search=native={}",
+                        lib_search_path.to_str().unwrap()
+                    );
+                })
         }
 
         vec![search().join("include")]
