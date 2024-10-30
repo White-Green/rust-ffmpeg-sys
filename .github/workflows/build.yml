@@ -20,7 +20,7 @@ jobs:
       - name: Install dependencies
         run: |
           apt update
-          apt install -y --no-install-recommends clang curl pkg-config
+          apt install -y --no-install-recommends clang curl pkg-config ca-certificates
       - name: Update Certificates
         run: update-ca-certificates
       - name: Set up Rust
@@ -59,8 +59,6 @@ jobs:
           curl -L https://sourceforge.net/projects/avbuild/files/linux/ffmpeg-7.1-linux-clang-default.tar.xz/download -o ffmpeg.tar.xz
           tar -xf ffmpeg.tar.xz
           pwd
-      - name: Update Certificates
-        run: update-ca-certificates
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
