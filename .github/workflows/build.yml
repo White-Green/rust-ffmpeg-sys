@@ -22,7 +22,7 @@ jobs:
           apt update
           apt install -y --no-install-recommends clang curl pkg-config
       - name: Update Certificates
-        run: sudo update-ca-certificates
+        run: update-ca-certificates
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -60,7 +60,7 @@ jobs:
           tar -xf ffmpeg.tar.xz
           pwd
       - name: Update Certificates
-        run: sudo update-ca-certificates
+        run: update-ca-certificates
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
