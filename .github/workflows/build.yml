@@ -20,7 +20,7 @@ jobs:
       - name: Install dependencies
         run: |
           apt update
-          apt install -y --no-install-recommends clang curl pkg-config ca-certificates openssl
+          apt install -y --no-install-recommends clang curl pkg-config ca-certificates libssl-dev
       - name: Update Certificates
         run: update-ca-certificates
       - name: Set up Rust
